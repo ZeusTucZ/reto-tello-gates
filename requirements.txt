@@ -1,0 +1,4 @@
+# Captura RGB y telemetría comprobadas contra DJITelloPy 2.5.0.
+djitellopy==2.5.0
+opencv-python>=4.8,<6
+numpy>=1.24,<3
