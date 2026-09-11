@@ -43,12 +43,12 @@ class CaptureSafetyTests(unittest.TestCase):
         self.assertEqual(code, 1)
         source.close.assert_called_once()
 
-    def test_manual_quit_stops_and_lands_after_mock_takeoff(self):
+    def test_auto_takeoff_without_gate_or_key_then_manual_quit_lands(self):
         source = self.source()
         source.read.return_value = np.zeros((480, 640, 3), np.uint8)
         source.tello.get_current_state.side_effect = lambda: {'bat': 80}
         with patch('main.VideoSource', return_value=source), patch.object(cfg, 'DRY_RUN', False), \
-                patch('main.cv2.waitKey', side_effect=[ord('t'), -1, -1, ord('q')]), \
+                patch('main.cv2.waitKey', side_effect=[-1, -1, -1, ord('q')]), \
                 patch('main.cv2.imshow'), patch('main.cv2.getWindowProperty', return_value=1):
             code = run(parse_args([]))
         self.assertEqual(code, 0)
@@ -69,6 +69,14 @@ class CaptureSafetyTests(unittest.TestCase):
         self.assertEqual(drawn.shape, frame.shape)
         self.assertGreater(np.count_nonzero(drawn), 0)
         self.assertEqual(np.count_nonzero(frame), 0)
+
+    def test_missing_gate_waits_then_aborts(self):
+        nav = Navigation()
+        nav.start(0)
+        self.assertEqual(nav.update(GateDetection(), (480, 640), 5), (0, 0, 0, 0))
+        self.assertEqual(nav.state, State.SEARCH)
+        nav.update(GateDetection(), (480, 640), cfg.GATE_LOSS_TIMEOUT + 0.1)
+        self.assertEqual(nav.state, State.EMERGENCY)
 
     def test_hover_still_obeys_mission_timeout(self):
         nav = Navigation(stage='hover')

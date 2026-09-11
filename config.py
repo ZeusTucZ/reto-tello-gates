@@ -4,15 +4,15 @@ Velocidades en unidades RC [-100, 100], no una distancia/velocidad medida.
 Áreas y tamaños en píxeles de PROCESS_WIDTH; errores/deadbands normalizados.
 """
 
-DRY_RUN = True
+DRY_RUN = False
 PROCESS_WIDTH = 640
 CONTROL_HZ = 20
 SHOW_MASK = True
 LOCAL_VIDEO_FPS_FALLBACK = 30.0
 
-# Ejemplo VERDE: sustituir por los valores de hsv_calibration.py.
-HSV_MIN = (35, 80, 60)
-HSV_MAX = (85, 255, 255)
+# Ejemplo AZUL: sustituir por los valores de hsv_calibration.py.
+HSV_MIN = (100, 80, 60)
+HSV_MAX = (130, 255, 255)
 MIN_CONTOUR_AREA = 1500
 MIN_GATE_SIZE = 45
 ASPECT_RATIO_TOLERANCE = 0.45  # acepta [1-tolerancia, 1/(1-tolerancia)]
@@ -26,24 +26,24 @@ MAX_HOLE_AREA_RATIO = 0.95
 MORPH_KERNEL_SIZE = 3        # impar
 MORPH_OPEN_ITERATIONS = 1
 MORPH_CLOSE_ITERATIONS = 2
-DETECTED_FRAMES = 5
+DETECTED_FRAMES = 1
 MAX_CENTER_JUMP = 0.15       # distancia normalizada por diagonal entre frames
 MAX_SIZE_CHANGE = 1.5        # cociente máximo de ancho entre frames
 
 # u = Kp * error. Kp ya está en unidades RC por unidad de error.
-KP_X = 22.0
-KP_Y = 22.0
-MAX_LR_SPEED = 12
-MAX_UD_SPEED = 12
+KP_X = 80.0
+KP_Y = 80.0
+MAX_LR_SPEED = 30
+MAX_UD_SPEED = 30
 DEADBAND_X = 0.08
 DEADBAND_Y = 0.08
-EMA_ALPHA = 0.35             # 1 = sin suavizado; menor = más retardo
+EMA_ALPHA = 1.0             # 1 = sin suavizado; menor = más retardo
 
 APPROACH_SPEED = 8
-CROSS_SPEED = 12
-CROSS_DURATION = 1.5         # segundos; NO garantiza cruzar 1 m
+CROSS_SPEED = 30              # avance RC reducido; no es velocidad medida
+CROSS_DURATION = 4.0         # segundos; NO garantiza cruzar 1 m
 CLOSE_WIDTH_RATIO = 0.60     # tamaño aparente, NO distancia métrica
-ALIGNED_FRAMES = 8
+ALIGNED_FRAMES = 5
 CROSS_STABLE_FRAMES = 8
 REALIGN_MULTIPLIER = 1.5     # histéresis al salir de APPROACH
 LOST_FRAMES = 3
@@ -51,8 +51,8 @@ DONE_HOVER_SECONDS = 1.0
 
 MIN_TAKEOFF_BATTERY = 40
 MIN_FLIGHT_BATTERY = 25
-MAX_RC_SPEED = 20            # límite global adicional conservador
-GATE_LOSS_TIMEOUT = 4.0
+MAX_RC_SPEED = 30             # límite global adicional conservador
+GATE_LOSS_TIMEOUT = 20.0      # espera sin movimiento por detección estable antes de aterrizar
 FRAME_TIMEOUT = 1.0
 TELEMETRY_TIMEOUT = 3.0
 PRE_FLIGHT_TIMEOUT = 15.0
@@ -62,7 +62,10 @@ COMMAND_TIMEOUT = 0.5        # watchdog: RC cero si el bucle se bloquea
 SDK_COMMAND_TIMEOUT = 7.0
 SDK_TAKEOFF_TIMEOUT = 20.0
 SDK_RETRIES = 2
-HUD_LOG_INTERVAL = 1.0
+HUD_LOG_INTERVAL = 1
+
+ADVANCE_PULSE_SECONDS = 0.4  # punto de partida; requiere calibración
+FINAL_ADVANCE_SECONDS = 3.0  # único avance adicional tras perder el gate; luego aterriza
 
 
 def validate():
@@ -111,6 +114,7 @@ def validate():
     if REALIGN_MULTIPLIER < 1 or MAX_SIZE_CHANGE < 1:
         raise ValueError('Multiplicadores deben ser >= 1')
     for name in ('CONTROL_HZ', 'MIN_CONTOUR_AREA', 'CROSS_DURATION',
+                 'ADVANCE_PULSE_SECONDS', 'FINAL_ADVANCE_SECONDS',
                  'GATE_LOSS_TIMEOUT', 'FRAME_TIMEOUT', 'TELEMETRY_TIMEOUT',
                  'PRE_FLIGHT_TIMEOUT', 'MAX_FLIGHT_SECONDS', 'COMMAND_TIMEOUT',
                  'SDK_COMMAND_TIMEOUT', 'SDK_TAKEOFF_TIMEOUT', 'LOCAL_VIDEO_FPS_FALLBACK', 'HUD_LOG_INTERVAL'):

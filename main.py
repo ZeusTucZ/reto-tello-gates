@@ -23,6 +23,7 @@ class State(str, Enum):
     ALIGN = 'ALIGN'
     APPROACH = 'APPROACH'
     CROSS = 'CROSS'
+    FINAL_ADVANCE = 'FINAL_ADVANCE'
     DONE = 'DONE'
     EMERGENCY = 'EMERGENCY'
 
@@ -40,6 +41,7 @@ class Navigation:
         self.last_seen = None
         self.started_at = None
         self.cross_started = None
+        self.has_advanced = False
         self.done_started = None
         self.errors = (0.0, 0.0)
         self.reason = ''
@@ -70,11 +72,20 @@ class Navigation:
             return ZERO
         if now - self.started_at >= self.cfg.MAX_FLIGHT_SECONDS:
             return self.abort('Tiempo máximo de misión')
-        if self.state == State.CROSS:
-            # CROSS es abierto/temporizado: desaparecer el marco es esperable.
-            if now - self.cross_started >= self.cfg.CROSS_DURATION:
-                self.state = State.DONE
-                self.done_started = now
+        if self.state in (State.CROSS, State.FINAL_ADVANCE):
+            duration = (self.cfg.FINAL_ADVANCE_SECONDS if self.state == State.FINAL_ADVANCE
+                        else self.cfg.ADVANCE_PULSE_SECONDS)
+            if now - self.cross_started >= duration:
+                if self.state == State.FINAL_ADVANCE:
+                    self.state = State.DONE
+                    self.done_started = now
+                else:
+                    self.has_advanced = True
+                    self.state = State.ALIGN
+                    self.aligned_frames = self.detected_frames = self.close_frames = 0
+                    self.lost_frames = 0
+                    self.previous = None
+                    self.controller.reset()
                 return ZERO
             return (0, self.cfg.CROSS_SPEED, 0, 0)
         if self.stage == 'hover':
@@ -89,6 +100,10 @@ class Navigation:
             if now - self.last_seen >= self.cfg.GATE_LOSS_TIMEOUT:
                 return self.abort('Pérdida prolongada del gate')
             if self.lost_frames >= self.cfg.LOST_FRAMES:
+                if self.stage == 'full' and self.has_advanced:
+                    self.state = State.FINAL_ADVANCE
+                    self.cross_started = now
+                    return (0, self.cfg.CROSS_SPEED, 0, 0)
                 self.state = State.SEARCH
             return ZERO  # frenar desde el PRIMER frame perdido
         if not self.same_target(detection, shape):
@@ -124,15 +139,13 @@ class Navigation:
             self.state = State.ALIGN
             self.aligned_frames = self.close_frames = 0
         if self.state == State.ALIGN and self.aligned_frames >= self.cfg.ALIGNED_FRAMES:
-            self.state = State.APPROACH
-        if (self.state == State.APPROACH and aligned
-                and self.aligned_frames >= self.cfg.ALIGNED_FRAMES
-                and self.close_frames >= self.cfg.CROSS_STABLE_FRAMES):
             if self.stage == 'full':
+                # Alineación confirmada: un pulso recto antes de realinear.
                 self.state = State.CROSS
                 self.cross_started = now
                 self.controller.reset()
                 return (0, self.cfg.CROSS_SPEED, 0, 0)
+            self.state = State.APPROACH
         # Etapa approach se detiene al alcanzar proximidad sin ejecutar CROSS.
         forward = self.cfg.APPROACH_SPEED if self.state == State.APPROACH else 0
         if self.stage == 'approach' and detection.width_ratio >= self.cfg.CLOSE_WIDTH_RATIO:
@@ -189,7 +202,7 @@ def run(args):
         battery = source.battery()
         if not dry_run and (battery is None or battery < cfg.MIN_TAKEOFF_BATTERY):
             raise RuntimeError('Batería insuficiente para permitir despegue')
-        LOG.info('Modo %s | etapa %s', 'DRY RUN' if dry_run else 'VUELO: pulsar t tras preflight', args.stage)
+        LOG.info('Modo %s | etapa %s', 'DRY RUN' if dry_run else 'VUELO: despegue automatico al recibir video valido', args.stage)
         start_wall = last_frame_at = time.monotonic()
         period = 1 / (source.fps if args.video else cfg.CONTROL_HZ)
         while True:
@@ -218,7 +231,7 @@ def run(args):
             elif nav.state == State.PRE_FLIGHT:
                 if dry_run:
                     nav.start(now)
-                elif key == ord('t') and fresh and not takeoff_attempted:
+                elif fresh and not takeoff_attempted:
                     battery = source.battery()
                     if battery is None or battery < cfg.MIN_TAKEOFF_BATTERY:
                         raise RuntimeError('Batería insuficiente al armar')
@@ -232,7 +245,7 @@ def run(args):
                             raise KeyboardInterrupt
                         time.sleep(1 / cfg.CONTROL_HZ)
                     takeoff_attempted = True  # incluso si se pierde la confirmación SDK
-                    # MOVIMIENTO FÍSICO: sólo con DRY_RUN=False y tecla t.
+                    # MOVIMIENTO FÍSICO: vuelo habilitado, video y telemetría válidos.
                     # El SDK bloquea durante takeoff; otro hilo mantiene GUI/ESC vivos.
                     def takeoff_worker():
                         try:
@@ -264,7 +277,7 @@ def run(args):
                     nav.last_seen = now
                 elif fresh:
                     commands = nav.update(detection, last_frame.shape, now)
-                elif nav.state == State.CROSS:
+                elif nav.state in (State.CROSS, State.FINAL_ADVANCE):
                     # Falta de contorno es normal; fallo del stream no lo es.
                     commands = nav.update(detection, last_frame.shape, now)
                 else:
@@ -273,8 +286,10 @@ def run(args):
                     nav.controller.reset()
                 if guard:
                     valid_until = None
-                    if nav.state == State.CROSS:
-                        valid_until = nav.cross_started + cfg.CROSS_DURATION + 1 / cfg.CONTROL_HZ
+                    if nav.state in (State.CROSS, State.FINAL_ADVANCE):
+                        duration = (cfg.FINAL_ADVANCE_SECONDS if nav.state == State.FINAL_ADVANCE
+                                    else cfg.ADVANCE_PULSE_SECONDS)
+                        valid_until = nav.cross_started + duration + 1 / cfg.CONTROL_HZ
                     guard.submit(commands, valid_until)
             if fresh:
                 battery = source.battery()

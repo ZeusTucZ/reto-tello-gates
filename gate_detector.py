@@ -20,11 +20,17 @@ class GateDetection:
 def normalized_error(detection, frame_shape):
     if not detection.detected:
         return 0.0, 0.0
+
     height, width = frame_shape[:2]
     if height <= 0 or width <= 0:
         raise ValueError('Dimensiones de frame inválidas')
-    return ((detection.center_x - width / 2) / (width / 2),
-            (height / 2 - detection.center_y) / (height / 2))
+
+    target_y = height * 0.25
+
+    return (
+        (detection.center_x - width / 2) / (width / 2),
+        (target_y - detection.center_y) / (height / 2),
+    )
 
 
 class GateDetector:
@@ -115,7 +121,8 @@ def draw_debug(frame, detection, state, errors, commands, fps=0.0,
              f'lr: {commands[0]}  fb: {commands[1]}  ud: {commands[2]}  yaw: {commands[3]}',
              f'gate ratio: {detection.width_ratio:.3f}  score: {detection.confidence:.2f}',
              f'FPS: {fps:.1f}  battery: {battery if battery is not None else "N/A"}',
-             counters, 't: arm/takeoff | q / ESC: stop + land | Ctrl+C: stop']
+             counters, 'AUTO takeoff | q / ESC: stop + land | Ctrl+C: stop'
+             if not dry_run else 'DRY RUN | q / ESC / Ctrl+C: stop']
     for i, line in enumerate(lines):
         point = (10, 22 + i * 22)
         cv2.putText(canvas, line, point, cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3)
