@@ -1,3 +1,96 @@
+# Visual navigation of a DJI Tello through a colored gate
+
+> **English summary.** The full documentation below is in Spanish. This
+> section summarizes it in English.
+
+This project is a Python prototype that uses a DJI Tello drone's camera to
+detect a blue 1×1 m gate, compute its relative position, and generate movement
+commands to align with the opening and fly through it. It combines HSV
+segmentation, geometric filters, a proportional controller, and a state
+machine. It can also process a webcam or a video file without flying a drone.
+It uses no trained model and does not estimate a 3D trajectory.
+
+## How it works
+
+```text
+Camera (Tello, webcam, or video file)
+-> BGR image, resized
+-> HSV mask + geometric filters
+-> gate center and normalized error
+-> stability check + proportional controller
+-> state machine (hover / align / approach / full)
+-> on-screen display, optional CSV log, and (in real flight) RC commands
+```
+
+The vertical alignment target is `target_y = height * 0.25`: aligning means
+placing the gate center at `(W/2, H/4)`, not at the geometric center of the
+image.
+
+## Safety — read before flying
+
+`config.py` contains `DRY_RUN = False`. Running `main.py` without `--dry-run`
+(or a local video/webcam source) **takes off automatically** once the initial
+checks pass — it does not wait for a keypress or for the gate to be detected.
+The program does **not** physically confirm the crossing: after a forward
+pulse, losing the gate for several frames can trigger a final timed
+3-second advance and then landing. Always test first with `--dry-run`,
+`--webcam`, or `--video`.
+
+## Quick start (no flight)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py --webcam 0 --stage align --max-frames 200
+```
+
+With a video file:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --video "path\gate_video.mp4" --headless --log-csv run.csv
+```
+
+Calibrate the blue HSV thresholds first if needed:
+
+```powershell
+.\.venv\Scripts\python.exe hsv_calibration.py --webcam 0
+```
+
+## Stack
+
+- Python, OpenCV, NumPy, `djitellopy==2.5.0`
+- HSV segmentation + geometric filters, proportional controller, state machine
+- See [DOCUMENTATION.md](DOCUMENTATION.md) for the detailed technical
+  explanation (formulas, state priorities, timing, and parameters).
+
+## Tests — current status
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
+```
+
+**36 tests run: 30 passed, 6 failed.** All 6 failures are in
+`tests/test_detector.py` and come from stale expectations, not from the
+program under test: two expect green gates (the detector now targets blue),
+one expects the old vertical reference, one expects the full sequence to
+complete with the green synthetic video, and two expect states of the previous
+navigation state machine. The 8 tests in `test_safety.py` and the 4 in
+`test_straight_cross.py` pass. These are simulated scenarios — passing tests
+do not guarantee physical behavior or a real crossing.
+
+## Known limitations
+
+- No physical confirmation of the crossing, no distance measurement to the
+  gate, and no general collision avoidance.
+- During the `CROSS` and `FINAL_ADVANCE` phases the trajectory is not
+  corrected; if the gate reappears, the final advance is not cancelled.
+- `SEARCH` does not sweep physically: it waits for detections with RC zero.
+- Parameters require calibration; the configuration and logs do not prove a
+  distance travelled.
+- No live demo or video.
+
+---
+
 # Navegación visual de un DJI Tello mediante un marco de color
 
 ## Descripción y problema
